@@ -1,0 +1,26 @@
+{
+  "name": "databaseservice",
+  "version": "1.0.0",
+  "license": "ISC",
+  "type": "commonjs",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "dev": "ts-node ./src/server",
+    "tsc": "tsc -watch"
+  },
+  "dependencies": {
+    "@types/sequelize": "^4.28.20",
+    "dotenv": "^17.2.3",
+    "express": "^5.1.0",
+    "mysql2": "^3.15.3",
+    "reflect-metadata": "^0.2.2",
+    "sequelize": "^6.37.7",
+    "sequelize-typescript": "^2.1.6",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.5",
+    "@types/node": "^24.10.0"
+  }
+}
