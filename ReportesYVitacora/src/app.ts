@@ -1,8 +1,6 @@
 import express, { Express, Request, Response, NextFunction} from "express";
-import productRoutes from "./routes/productRoutes";
-import employerRoutes from "./routes/employerRoutes";
-import userRoutes from "./routes/userRoutes";
-import promotionRoutes from "./routes/promotionRoutes";
+import salesRoutes from "./routes/salesRoutes";
+import bitacoraRoutes from "./routes/bitacoraRoutes";
 
 const app: Express = express();
 
@@ -21,9 +19,8 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok' });
 });
 
-app.use("/api/products", productRoutes);
-app.use("/api/employers", employerRoutes)
-app.use("/api/users", userRoutes);
-app.use("/api/promotions", promotionRoutes);
+// Rutas de la aplicación
+app.use("/api/sales", salesRoutes);
+app.use("/api/bitacora", bitacoraRoutes);
 
 export default app;

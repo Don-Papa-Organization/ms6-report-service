@@ -4,6 +4,7 @@ import {
     Model,
     DataType,
     PrimaryKey,
+    AutoIncrement,
     ForeignKey,
     BelongsTo
 } from "sequelize-typescript";
@@ -11,7 +12,14 @@ import {
 @Table({ tableName: "bitacora", timestamps: false })
 export class Bitacora extends Model {
     @PrimaryKey
+    @AutoIncrement
     @Column(DataType.INTEGER)
+    idBitacora!: number;
+
+    @Column({
+        type: DataType.INTEGER,
+        allowNull: false
+    })
     idUsuario!: number;
 
     @Column(DataType.DATE)
@@ -26,7 +34,7 @@ export class Bitacora extends Model {
     })
     descripcion!: string;
 
-    @Column(DataType.ENUM('REPORTE_INCIDENTE', 'OTRO'))
+    @Column(DataType.ENUM('REPORTE_INCIDENTE', 'COMENTARIO_JORNADA', 'OTRO'))
     tipo?: string;
 
     @Column({

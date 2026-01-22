@@ -4,7 +4,7 @@ import { Sequelize } from "sequelize-typescript";
 //Importacion de modelos
 import {
   Bitacora
-} from "../models"
+} from "../domain/models"
 
 //Importar credenciales
 const DB_HOST = process.env.DB_HOST || "mysql"; 
