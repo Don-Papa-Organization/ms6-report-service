@@ -1,6 +1,7 @@
 import express, { Express, Request, Response, NextFunction} from "express";
 import salesRoutes from "./routes/salesRoutes";
 import bitacoraRoutes from "./routes/bitacoraRoutes";
+import { errorMiddleware } from "./middlewares/error.middleware";
 
 const app: Express = express();
 
@@ -22,5 +23,8 @@ app.get('/health', (req, res) => {
 // Rutas de la aplicación
 app.use("/api/sales", salesRoutes);
 app.use("/api/bitacora", bitacoraRoutes);
+
+// Middleware de manejo de errores - DEBE IR AL FINAL
+app.use(errorMiddleware);
 
 export default app;

@@ -1,31 +1,12 @@
 export type TipoBitacora = 'REPORTE_INCIDENTE' | 'COMENTARIO_JORNADA' | 'OTRO';
 
-export interface CreateBitacoraDto {
+export interface BitacoraDto {
+    id: number;
     idUsuario: number;
-    horaInicio?: Date;
-    horaFin?: Date;
-    descripcion: string;
-    tipo?: TipoBitacora;
-    fecha?: Date;
     idEmpleado: number;
-}
-
-export interface UpdateBitacoraDto {
-    idUsuario?: number;
-    horaInicio?: Date;
-    horaFin?: Date;
-    descripcion?: string;
-    tipo?: TipoBitacora;
-    fecha?: Date;
-    idEmpleado?: number;
-}
-
-export interface BitacoraResponseDto {
-    idUsuario: number;
-    horaInicio?: Date;
-    horaFin?: Date;
     descripcion: string;
-    tipo?: string;
-    fecha?: Date;
-    idEmpleado: number;
+    tipo: TipoBitacora;
+    fecha: Date;
+    horaInicio?: Date;
+    horaFin?: Date;
 }

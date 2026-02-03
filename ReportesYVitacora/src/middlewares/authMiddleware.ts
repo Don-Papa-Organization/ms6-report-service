@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from "express";
 import { verifyAccessToken } from "../utils/jwtUtil";
 import { TipoUsuario } from "../types/express";
+import { AppError } from "./error.middleware";
 
 // Extrae token desde cookie accessToken o encabezado Authorization: Bearer
 export function extractToken(req: Request): string | null {
@@ -19,30 +20,26 @@ export function extractToken(req: Request): string | null {
 }
 
 export const authenticateToken = (req: Request, res: Response, next: NextFunction): any => {
-	try {
-		const token = extractToken(req);
-		if (!token) {
-			return res.status(401).json({ message: "No se proporcionó access token" });
-		}
-
-		const payload = verifyAccessToken(token);
-		if (!payload) {
-			return res.status(401).json({ message: "Token inválido o expirado" });
-		}
-
-		req.user = payload;
-		next();
-	} catch (error) {
-		return res.status(500).json({ message: "Error interno de autenticación" });
+	const token = extractToken(req);
+	if (!token) {
+		throw new AppError("No se proporcionó access token", 401);
 	}
+
+	const payload = verifyAccessToken(token);
+	if (!payload) {
+		throw new AppError("Token inválido o expirado", 401);
+	}
+
+	req.user = payload;
+	next();
 };
 
 export const requireUsuarioActivo = (req: Request, res: Response, next: NextFunction) => {
 	if (!req.user) {
-		return res.status(401).json({ message: "No autenticado" });
+		throw new AppError("No autenticado", 401);
 	}
 	if (!req.user.activo) {
-		return res.status(403).json({ message: "Usuario no activo" });
+		throw new AppError("Usuario no activo", 403);
 	}
 	return next();
 };
@@ -54,13 +51,13 @@ export const requireRoles = (...rolesPermitidos: TipoUsuario[]) => {
 
 	return (req: Request, res: Response, next: NextFunction) => {
 		if (!req.user) {
-			return res.status(401).json({ message: "No autenticado" });
+			throw new AppError("No autenticado", 401);
 		}
 		if (!req.user.activo) {
-			return res.status(403).json({ message: "Usuario no activo" });
+			throw new AppError("Usuario no activo", 403);
 		}
 		if (!rolesPermitidos.includes(req.user.tipoUsuario)) {
-			return res.status(403).json({ message: "No tiene permisos para esta operación" });
+			throw new AppError("No tiene permisos para esta operación", 403);
 		}
 		return next();
 	};
