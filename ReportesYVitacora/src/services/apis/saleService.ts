@@ -50,6 +50,22 @@ export class SaleService {
         });
     }
 
+    private extraerLista<T>(data: any): T[] {
+        if (data && data.data) {
+            return Array.isArray(data.data) ? data.data : [];
+        }
+        if (Array.isArray(data)) {
+            return data;
+        }
+        return [];
+    }
+
+    private esErrorIdInvalido(error: any, mensaje: string): boolean {
+        const status = error?.response?.status;
+        const detalle = (error?.response?.data?.message || error?.message || '').toLowerCase();
+        return status === 400 && detalle.includes(mensaje);
+    }
+
     /**
      * Obtener todos los pedidos del sistema
      * @param token Token de autenticación del usuario (empleado/admin)
@@ -62,17 +78,21 @@ export class SaleService {
                     Authorization: `Bearer ${token}`
                 }
             });
-            // La respuesta viene con estructura { success, message, data }
-            // Necesitamos extraer el array del campo data
-            if (response.data && response.data.data) {
-                return Array.isArray(response.data.data) ? response.data.data : [];
-            }
-            // Si viene directamente como array
-            if (Array.isArray(response.data)) {
-                return response.data;
-            }
-            return [];
+            return this.extraerLista<Pedido>(response.data);
         } catch (error: any) {
+            if (this.esErrorIdInvalido(error, 'id de pedido inválido')) {
+                try {
+                    const response = await this.client.get('/api/orders', {
+                        headers: {
+                            Authorization: `Bearer ${token}`
+                        }
+                    });
+                    return this.extraerLista<Pedido>(response.data);
+                } catch (fallbackError: any) {
+                    console.error('Error al obtener todos los pedidos:', fallbackError.message);
+                    throw new Error(`Error al consultar pedidos: ${fallbackError.response?.data?.message || fallbackError.message}`);
+                }
+            }
             console.error('Error al obtener todos los pedidos:', error.message);
             throw new Error(`Error al consultar pedidos: ${error.response?.data?.message || error.message}`);
         }
@@ -90,17 +110,21 @@ export class SaleService {
                     Authorization: `Bearer ${token}`
                 }
             });
-            // La respuesta viene con estructura { success, message, data }
-            // Necesitamos extraer el array del campo data
-            if (response.data && response.data.data) {
-                return Array.isArray(response.data.data) ? response.data.data : [];
-            }
-            // Si viene directamente como array
-            if (Array.isArray(response.data)) {
-                return response.data;
-            }
-            return [];
+            return this.extraerLista<Pago>(response.data);
         } catch (error: any) {
+            if (this.esErrorIdInvalido(error, 'id de pago inválido')) {
+                try {
+                    const response = await this.client.get('/api/payments', {
+                        headers: {
+                            Authorization: `Bearer ${token}`
+                        }
+                    });
+                    return this.extraerLista<Pago>(response.data);
+                } catch (fallbackError: any) {
+                    console.error('Error al obtener todos los pagos:', fallbackError.message);
+                    throw new Error(`Error al consultar pagos: ${fallbackError.response?.data?.message || fallbackError.message}`);
+                }
+            }
             console.error('Error al obtener todos los pagos:', error.message);
             throw new Error(`Error al consultar pagos: ${error.response?.data?.message || error.message}`);
         }
