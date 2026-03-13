@@ -2,9 +2,22 @@ import { Router } from "express";
 import { SalesController } from "../controllers/salesController";
 import { authenticateToken, requireRoles } from "../middlewares/authMiddleware";
 import { TipoUsuario } from "../types/express";
+import { AnalyticsRepository } from "../domain/repositories/analyticsRepository";
+import { getSequelizeInstance } from "../config/db";
 
 const router = Router();
-const salesController = new SalesController();
+
+// Crear controlador con dependencias
+let salesController: SalesController;
+try {
+  const sequelize = getSequelizeInstance();
+  const repository = new AnalyticsRepository(sequelize);
+  salesController = new SalesController(repository);
+} catch (error) {
+  console.warn('[SalesRoutes] No se pudo inicializar SalesController con AnalyticsRepository');
+  // Fallback - crear sin repositorio
+  salesController = new SalesController(null as any);
+}
 
 /**
  * Rutas para CU011 y CU012 - Gestión de reportes de ventas

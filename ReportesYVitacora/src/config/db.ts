@@ -3,7 +3,13 @@ import { Sequelize } from "sequelize-typescript";
 
 //Importacion de modelos
 import {
-  Bitacora
+  Bitacora,
+  DailySalesSummary,
+  ProductSalesSummary,
+  CategoryStockSummary,
+  UserGrowthSummary,
+  ReservationOccupancySummary,
+  PromotionPerformance
 } from "../domain/models"
 
 //Importar credenciales
@@ -11,6 +17,16 @@ const DB_HOST = process.env.DB_HOST || "mysql";
 const DB_USER = process.env.DB_USER || "root";
 const DB_PASSWORD = process.env.DB_PASSWORD || "MiContraseñaSegura123!";
 const DB_NAME = process.env.DB_NAME || "don_papa";
+
+// Instancia global de Sequelize
+let sequelizeInstance: Sequelize | null = null;
+
+export function getSequelizeInstance(): Sequelize {
+  if (!sequelizeInstance) {
+    throw new Error('Sequelize instance not initialized. Call initializeDB() first.');
+  }
+  return sequelizeInstance;
+}
 
 export async function initializeDB() {
   // 1. Crear BD si no existe (con mysql2) - con reintentos
@@ -50,10 +66,19 @@ export async function initializeDB() {
     password: DB_PASSWORD,
     database: DB_NAME,
     models: [
-      Bitacora
+      Bitacora,
+      DailySalesSummary,
+      ProductSalesSummary,
+      CategoryStockSummary,
+      UserGrowthSummary,
+      ReservationOccupancySummary,
+      PromotionPerformance
     ],
     logging: false, // Desactiva logs de SQL en producción
   });
+
+  // Guardar instancia global
+  sequelizeInstance = sequelize;
 
   return sequelize;
 }

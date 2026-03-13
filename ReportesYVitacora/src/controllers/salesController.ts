@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from "express";
 import { SalesReportService } from "../services/salesReportService";
 import { PdfExportService } from "../services/pdfExportService";
+import { AnalyticsRepository } from "../domain/repositories/analyticsRepository";
 import { extractToken } from "../middlewares/authMiddleware";
 import { ApiResponse } from "../types";
 import { AppError } from "../middlewares/error.middleware";
@@ -9,9 +10,9 @@ export class SalesController {
     private salesReportService: SalesReportService;
     private pdfExportService: PdfExportService;
 
-    constructor() {
+    constructor(private analyticsRepository: AnalyticsRepository) {
         this.salesReportService = new SalesReportService();
-        this.pdfExportService = new PdfExportService();
+        this.pdfExportService = new PdfExportService(this.analyticsRepository);
     }
 
     /**
