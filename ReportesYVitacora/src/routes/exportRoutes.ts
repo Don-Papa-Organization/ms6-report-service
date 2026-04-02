@@ -3,9 +3,8 @@ import { ExportController } from "../controllers/exportController";
 import { authenticateToken, requireRoles } from "../middlewares/authMiddleware";
 import { TipoUsuario } from "../types/express";
 
-const router = Router();
-
 export const createExportRoutes = (controller: ExportController) => {
+  const router = Router();
   /**
    * Rutas de Exportación - Solo accesible para administradores
    */
@@ -20,5 +19,3 @@ export const createExportRoutes = (controller: ExportController) => {
 
   return router;
 };
-
-export default router;

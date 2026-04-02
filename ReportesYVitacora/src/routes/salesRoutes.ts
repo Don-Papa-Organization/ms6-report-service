@@ -2,27 +2,14 @@ import { Router } from "express";
 import { SalesController } from "../controllers/salesController";
 import { authenticateToken, requireRoles } from "../middlewares/authMiddleware";
 import { TipoUsuario } from "../types/express";
-import { AnalyticsRepository } from "../domain/repositories/analyticsRepository";
-import { getSequelizeInstance } from "../config/db";
-
-const router = Router();
-
-// Crear controlador con dependencias
-let salesController: SalesController;
-try {
-  const sequelize = getSequelizeInstance();
-  const repository = new AnalyticsRepository(sequelize);
-  salesController = new SalesController(repository);
-} catch (error) {
-  console.warn('[SalesRoutes] No se pudo inicializar SalesController con AnalyticsRepository');
-  // Fallback - crear sin repositorio
-  salesController = new SalesController(null as any);
-}
 
 /**
  * Rutas para CU011 y CU012 - Gestión de reportes de ventas
  * Accesible para administradores y empleados
  */
+
+export const createSalesRoutes = (salesController: SalesController) => {
+  const router = Router();
 
 // CU011 - Consultar historial de ventas
 // GET /api/sales/history?fechaInicio=2024-01-01&fechaFin=2024-12-31&estado=entregado&canalVenta=web
@@ -38,4 +25,5 @@ router.get('/:idPedido/detail', authenticateToken, requireRoles(TipoUsuario.admi
 // Solo administradores pueden generar reportes consolidados
 router.get('/by-dates', authenticateToken, requireRoles(TipoUsuario.administrador), salesController.generarReportePorFechas);
 
-export default router;
+  return router;
+};

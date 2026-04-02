@@ -50,12 +50,18 @@ export class AnalyticsRepository {
 
   async getProductSalesSummary(startDate: Date, endDate: Date, limit: number = 10): Promise<ProductSalesSummary[]> {
     return await ProductSalesSummary.findAll({
+      attributes: [
+        'idProducto',
+        [Sequelize.fn('SUM', Sequelize.col('cantidadVendida')), 'cantidadVendida'],
+        [Sequelize.fn('SUM', Sequelize.col('ingresosGenerados')), 'ingresosGenerados']
+      ],
       where: {
         fecha: {
           [Op.between]: [startDate, endDate]
         }
       },
-      order: [['ingresosGenerados', 'DESC']],
+      group: ['idProducto'],
+      order: [[Sequelize.fn('SUM', Sequelize.col('ingresosGenerados')), 'DESC']],
       limit
     });
   }
@@ -118,6 +124,18 @@ export class AnalyticsRepository {
         break;
       case 'product_sales':
         model = ProductSalesSummary;
+        break;
+      case 'category_stock':
+        model = CategoryStockSummary;
+        break;
+      case 'user_growth':
+        model = UserGrowthSummary;
+        break;
+      case 'reservation_occupancy':
+        model = ReservationOccupancySummary;
+        break;
+      case 'promotion_performance':
+        model = PromotionPerformance;
         break;
       default:
         return false;

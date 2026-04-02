@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { AnalyticsRepository } from '../domain/repositories/analyticsRepository';
+import { inventoryExternalService } from '../services/apis/inventoryExternalService';
 
 export class AnalyticsController {
   constructor(private repository: AnalyticsRepository) {}
@@ -56,23 +57,30 @@ export class AnalyticsController {
   // Timeline de ventas diarias
   async getSalesTimeline(req: Request, res: Response): Promise<void> {
     try {
-      const { startDate, endDate } = req.query;
+      const { startDate, endDate, limit = 14 } = req.query;
 
       const start = new Date(startDate as string || new Date().toISOString().split('T')[0]);
       const end = new Date(endDate as string || new Date().toISOString());
       end.setHours(23, 59, 59, 999);
 
       const summaries = await this.repository.getDailySalesSummary(start, end);
-
-      res.json({
-        success: true,
-        data: summaries.map(s => ({
+      const timeline = summaries
+        .map(s => ({
           fecha: s.fecha,
-          totalVentas: s.totalVentas,
+          totalVentas: Number(s.totalVentas),
           cantidadPedidos: s.cantidadPedidos,
           canalFisico: s.canalFisico,
           canalWeb: s.canalWeb
         }))
+        .sort((a, b) => new Date(a.fecha).getTime() - new Date(b.fecha).getTime())
+        .slice(-Math.max(1, Number(limit) || 14));
+
+      res.json({
+        success: true,
+        data: {
+          puntos: timeline,
+          totalPuntos: timeline.length
+        }
       });
     } catch (error: any) {
       res.status(500).json({
@@ -87,8 +95,9 @@ export class AnalyticsController {
   async getTopProducts(req: Request, res: Response): Promise<void> {
     try {
       const { startDate, endDate, limit = 10 } = req.query;
-
-      const start = new Date(startDate as string || new Date().toISOString().split('T')[0]);
+      const defaultStart = new Date();
+      defaultStart.setDate(defaultStart.getDate() - 30);
+      const start = new Date(startDate as string || defaultStart.toISOString().split('T')[0]);
       const end = new Date(endDate as string || new Date().toISOString());
       end.setHours(23, 59, 59, 999);
 
@@ -116,11 +125,11 @@ export class AnalyticsController {
   async getDeadStock(req: Request, res: Response): Promise<void> {
     try {
       const { daysWithoutSale = 30 } = req.query;
+      const authHeader = req.headers.authorization;
 
       const cutoffDate = new Date();
       cutoffDate.setDate(cutoffDate.getDate() - parseInt(daysWithoutSale as string || '30'));
 
-      const latestSale = await this.repository.getLatestDailySalesSummary();
       const allProductSales = await this.repository.getProductSalesSummary(
         cutoffDate,
         new Date(),
@@ -129,12 +138,24 @@ export class AnalyticsController {
 
       const soldProducts = new Set(allProductSales.map(p => p.idProducto));
 
-      // En un caso real, consultaríamos todas los productos de inventory
-      // Por ahora retornamos la estructura esperada
+      const allProducts = await inventoryExternalService.getAllProducts(authHeader);
+      const deadStockProducts = allProducts
+        .filter((p) => p.activo && !soldProducts.has(p.idProducto))
+        .map((p) => ({
+          idProducto: p.idProducto,
+          nombre: p.nombre,
+          stockActual: p.stockActual,
+          stockMinimo: p.stockMinimo
+        }));
+
       res.json({
         success: true,
         data: {
-          productosSinVentas: Array.from(soldProducts).length === 0 ? [] : [],
+          productosSinVentas: deadStockProducts,
+          resumen: {
+            totalProductosEvaluados: allProducts.length,
+            totalProductosSinVentas: deadStockProducts.length
+          },
           periodo: { desde: cutoffDate, hasta: new Date() },
           daysWithoutSale: parseInt(daysWithoutSale as string || '30')
         }
@@ -158,15 +179,32 @@ export class AnalyticsController {
       end.setHours(23, 59, 59, 999);
 
       const categories = await this.repository.getCategoryStockSummary(start, end);
+      const latestByCategory = new Map<number, { idCategoria: number; stockTotal: number; productosUnicos: number; fecha: Date }>();
+
+      for (const row of categories) {
+        const existing = latestByCategory.get(row.idCategoria);
+        if (!existing || new Date(row.fecha).getTime() > new Date(existing.fecha).getTime()) {
+          latestByCategory.set(row.idCategoria, {
+            idCategoria: row.idCategoria,
+            stockTotal: row.stockTotal,
+            productosUnicos: row.productosUnicos,
+            fecha: row.fecha
+          });
+        }
+      }
+
+      const data = Array.from(latestByCategory.values());
 
       res.json({
         success: true,
-        data: categories.map(c => ({
-          idCategoria: c.idCategoria,
-          stockTotal: c.stockTotal,
-          productosUnicos: c.productosUnicos,
-          fecha: c.fecha
-        }))
+        data: {
+          categorias: data,
+          resumen: {
+            totalCategorias: data.length,
+            stockTotal: data.reduce((acc, c) => acc + c.stockTotal, 0),
+            productosUnicos: data.reduce((acc, c) => acc + c.productosUnicos, 0)
+          }
+        }
       });
     } catch (error: any) {
       res.status(500).json({
@@ -224,13 +262,25 @@ export class AnalyticsController {
 
       const growth = await this.repository.getUserGrowthSummary(start, end);
 
-      res.json({
-        success: true,
-        data: growth.map(g => ({
+      const serie = growth
+        .map(g => ({
           fecha: g.fecha,
           clientesFrecuentesActivos: g.clientesFrecuentesActivos,
           nuevosRegistros: g.nuevosRegistros
         }))
+        .sort((a, b) => new Date(a.fecha).getTime() - new Date(b.fecha).getTime());
+
+      res.json({
+        success: true,
+        data: {
+          serie,
+          resumen: {
+            ultimoValorFrecuentes: serie.length > 0 ? serie[serie.length - 1].clientesFrecuentesActivos : 0,
+            promedioFrecuentes: serie.length > 0
+              ? Math.round(serie.reduce((acc, it) => acc + it.clientesFrecuentesActivos, 0) / serie.length)
+              : 0
+          }
+        }
       });
     } catch (error: any) {
       res.status(500).json({
@@ -251,12 +301,20 @@ export class AnalyticsController {
       end.setHours(23, 59, 59, 999);
 
       const reservations = await this.repository.getReservationOccupancySummary(start, end);
+      const peakHourCount = new Map<number, number>();
+      for (const item of reservations) {
+        if (item.horaPico === null || item.horaPico === undefined) continue;
+        peakHourCount.set(item.horaPico, (peakHourCount.get(item.horaPico) || 0) + 1);
+      }
+
+      const horaPicoGlobal = Array.from(peakHourCount.entries())
+        .sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
 
       res.json({
         success: true,
         data: {
           periodo: { desde: startDate, hasta: endDate },
-          horaPico: reservations.length > 0 ? reservations[0].horaPico : null,
+          horaPico: horaPicoGlobal,
           detalles: reservations
         }
       });
@@ -319,6 +377,14 @@ export class AnalyticsController {
       const totalUsosAplicados = promotions.reduce((sum, p) => sum + p.usosAplicados, 0);
       const totalIngresoPromo = promotions.reduce((sum, p) => sum + Number(p.ingresoBajoPromocion), 0);
 
+      const detalles = promotions.map(p => ({
+        idPromocion: p.idPromocion,
+        idEvento: p.idEvento,
+        usosAplicados: p.usosAplicados,
+        ingresoTotal: Number(p.ingresoBajoPromocion),
+        fecha: p.fecha
+      }));
+
       res.json({
         success: true,
         data: {
@@ -327,21 +393,169 @@ export class AnalyticsController {
             totalPromociones: promotions.length,
             totalUsosAplicados,
             ingresoTotalPromo: totalIngresoPromo,
-            ingresoPromedio: promotions.length > 0 ? (totalIngresoPromo / promotions.length).toFixed(2) : '0.00'
+            ingresoPromedio: promotions.length > 0 ? Number((totalIngresoPromo / promotions.length).toFixed(2)) : 0
           },
-          detalles: promotions.map(p => ({
-            idPromocion: p.idPromocion,
-            idEvento: p.idEvento,
-            usosAplicados: p.usosAplicados,
-            ingresoTotal: p.ingresoBajoPromocion,
-            fecha: p.fecha
-          }))
+          topPromociones: detalles
+            .sort((a, b) => b.ingresoTotal - a.ingresoTotal)
+            .slice(0, 5)
         }
       });
     } catch (error: any) {
       res.status(500).json({
         success: false,
         message: 'Error al obtener efectividad de promociones',
+        error: error.message
+      });
+    }
+  }
+
+  // Productos con stock bajo (del ms1)
+  async getLowStock(req: Request, res: Response): Promise<void> {
+    try {
+      const authHeader = req.headers.authorization;
+      
+      const products = await inventoryExternalService.getLowStockProducts(authHeader);
+
+      res.json({
+        success: true,
+        data: {
+          productos: products.map(p => ({
+            idProducto: p.idProducto,
+            nombre: p.nombre,
+            stockActual: p.stockActual,
+            stockMinimo: p.stockMinimo
+          })),
+          total: products.length
+        }
+      });
+    } catch (error: any) {
+      res.status(500).json({
+        success: false,
+        message: 'Error al obtener productos con stock bajo',
+        error: error.message
+      });
+    }
+  }
+
+  // Stock por categoría (del ms1)
+  async getInventoryStock(req: Request, res: Response): Promise<void> {
+    try {
+      const authHeader = req.headers.authorization;
+      
+      const { products, categories } = await inventoryExternalService.getProductsWithCategory(authHeader);
+
+      const categoryMap = new Map(categories.map(c => [c.idCategoria, c.nombre]));
+      
+      const stockByCategory = new Map<number, { nombre: string; stockTotal: number; productos: number }>();
+
+      for (const product of products) {
+        const catId = product.idCategoria || 0;
+        const catName = categoryMap.get(catId) || 'Sin categoría';
+        
+        if (!stockByCategory.has(catId)) {
+          stockByCategory.set(catId, { nombre: catName, stockTotal: 0, productos: 0 });
+        }
+        
+        const cat = stockByCategory.get(catId)!;
+        cat.stockTotal += product.stockActual;
+        cat.productos += 1;
+      }
+
+      res.json({
+        success: true,
+        data: Array.from(stockByCategory.values()).map(c => ({
+          categoria: c.nombre,
+          stockTotal: c.stockTotal,
+          productos: c.productos
+        }))
+      });
+    } catch (error: any) {
+      res.status(500).json({
+        success: false,
+        message: 'Error al obtener stock por categoría',
+        error: error.message
+      });
+    }
+  }
+
+  // Ventas semanales agrupadas
+  async getWeeklySales(req: Request, res: Response): Promise<void> {
+    try {
+      const { startDate, endDate, weeks = 12 } = req.query;
+
+      const now = new Date();
+      const start = startDate ? new Date(startDate as string) : new Date(now.setDate(now.getDate() - (parseInt(weeks as string) || 12) * 7));
+      const end = endDate ? new Date(endDate as string) : new Date();
+      end.setHours(23, 59, 59, 999);
+
+      const dailySummaries = await this.repository.getDailySalesSummary(start, end);
+
+      const weeklyMap = new Map<string, { weekStart: Date; totalVentas: number; cantidadPedidos: number; canalFisico: number; canalWeb: number; totalDescuentos: number }>();
+
+      for (const summary of dailySummaries) {
+        const date = new Date(summary.fecha);
+        const dayOfWeek = date.getDay();
+        const diff = date.getDate() - dayOfWeek;
+        const weekStart = new Date(date.setDate(diff));
+        const weekKey = weekStart.toISOString().split('T')[0];
+
+        if (!weeklyMap.has(weekKey)) {
+          weeklyMap.set(weekKey, { weekStart, totalVentas: 0, cantidadPedidos: 0, canalFisico: 0, canalWeb: 0, totalDescuentos: 0 });
+        }
+
+        const week = weeklyMap.get(weekKey)!;
+        week.totalVentas += Number(summary.totalVentas);
+        week.cantidadPedidos += summary.cantidadPedidos;
+        week.canalFisico += summary.canalFisico;
+        week.canalWeb += summary.canalWeb;
+        week.totalDescuentos += Number(summary.totalDescuentos);
+      }
+
+      const weeklyData = Array.from(weeklyMap.values())
+        .sort((a, b) => a.weekStart.getTime() - b.weekStart.getTime())
+        .map(w => ({
+          semana: w.weekStart.toISOString().split('T')[0],
+          totalVentas: w.totalVentas,
+          cantidadPedidos: w.cantidadPedidos,
+          ventasFisico: w.canalFisico,
+          ventasWeb: w.canalWeb,
+          descuentos: w.totalDescuentos
+        }));
+
+      if (weeklyData.length === 0) {
+        res.json({
+          success: true,
+          data: {
+            ventasSemanales: [],
+            comparacion: null
+          }
+        });
+        return;
+      }
+
+      const currentWeek = weeklyData[weeklyData.length - 1];
+      const previousWeek = weeklyData[weeklyData.length - 2];
+
+      res.json({
+        success: true,
+        data: {
+          ventasSemanales: weeklyData,
+          comparacion: previousWeek ? {
+            semanaActual: currentWeek.semana,
+            semanaAnterior: previousWeek.semana,
+            cambioVentas: currentWeek.totalVentas - previousWeek.totalVentas,
+            cambioPorcentual: previousWeek.totalVentas > 0 
+              ? ((currentWeek.totalVentas - previousWeek.totalVentas) / previousWeek.totalVentas * 100).toFixed(2)
+              : '0.00',
+            cambioFisico: currentWeek.ventasFisico - previousWeek.ventasFisico,
+            cambioWeb: currentWeek.ventasWeb - previousWeek.ventasWeb
+          } : null
+        }
+      });
+    } catch (error: any) {
+      res.status(500).json({
+        success: false,
+        message: 'Error al obtener ventas semanales',
         error: error.message
       });
     }

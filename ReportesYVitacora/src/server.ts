@@ -4,6 +4,9 @@ dotenv.config({ path: './src/.env' });
 import app, { initializeAnalyticsRoutes } from "./app";
 import { initializeDB } from "./config/db";
 import { AnalyticsRepository } from "./domain/repositories/analyticsRepository";
+import { BitacoraRepository } from "./domain/repositories/bitacoraRepository";
+import { AnalyticsSeeds } from "./seeds/analytics.seeds";
+import { BitacoraSeeds } from "./seeds/bitacora.seeds";
 import { ETLSyncService } from "./services/etlSyncService";
 import { CronSchedulerService } from "./services/cronSchedulerService";
 
@@ -25,6 +28,24 @@ async function startServer() {
 
         // Inicializar ETL y Cron Scheduler
         const repository = new AnalyticsRepository(sequelize);
+
+        // Seeds opcionales para demo
+        const shouldRunAnalyticsSeeds = process.env.RUN_ANALYTICS_SEEDS === 'true';
+        const shouldRunBitacoraSeeds = process.env.RUN_BITACORA_SEEDS === 'true';
+
+        if (shouldRunAnalyticsSeeds) {
+            const seeds = new AnalyticsSeeds(repository);
+            await seeds.run();
+            console.log('🌱 Seeds de analytics ejecutados por configuración RUN_ANALYTICS_SEEDS=true');
+        }
+
+        if (shouldRunBitacoraSeeds) {
+            const bitacoraRepository = new BitacoraRepository();
+            const bitacoraSeeds = new BitacoraSeeds(bitacoraRepository);
+            await bitacoraSeeds.run();
+            console.log('🌱 Seeds de bitácora ejecutados por configuración RUN_BITACORA_SEEDS=true');
+        }
+
         const etlService = new ETLSyncService({
             orderServiceUrl: process.env.ORDER_SERVICE_URL || 'http://order-service-app:4003/api',
             inventoryServiceUrl: process.env.INVENTORY_SERVICE_URL || 'http://inventory-service-app:4001/api',
@@ -42,7 +63,8 @@ async function startServer() {
         cronScheduler.startAllJobs(cronExpression);
 
         // Backfill inicial para poblar analíticas recientes al arrancar
-        const startupBackfillDays = parseInt(process.env.STARTUP_BACKFILL_DAYS || '1');
+        const startupBackfillDays = parseInt(process.env.STARTUP_BACKFILL_DAYS || '30');
+        console.log(`🧩 Backfill inicial configurado: ${startupBackfillDays} día(s)`);
         await cronScheduler.runStartupBackfill(startupBackfillDays);
 
         // Obtener estado de jobs

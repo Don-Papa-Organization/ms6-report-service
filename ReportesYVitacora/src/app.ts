@@ -1,12 +1,13 @@
 import express, { Express, Request, Response, NextFunction} from "express";
-import salesRoutes from "./routes/salesRoutes";
 import bitacoraRoutes from "./routes/bitacoraRoutes";
 import { createAnalyticsRoutes } from "./routes/analyticsRoutes";
 import { createExportRoutes } from "./routes/exportRoutes";
+import { createSalesRoutes } from "./routes/salesRoutes";
 import { errorMiddleware } from "./middlewares/error.middleware";
 import { AnalyticsRepository } from "./domain/repositories/analyticsRepository";
 import { AnalyticsController } from "./controllers/analyticsController";
 import { ExportController } from "./controllers/exportController";
+import { SalesController } from "./controllers/salesController";
 import { PdfExportService } from "./services/pdfExportService";
 import { Sequelize } from "sequelize-typescript";
 
@@ -31,6 +32,7 @@ app.get('/health', (req, res) => {
 export function initializeAnalyticsRoutes(sequelize: Sequelize) {
   const repository = new AnalyticsRepository(sequelize);
   const analyticsController = new AnalyticsController(repository);
+  const salesController = new SalesController(repository);
   const pdfExportService = new PdfExportService(repository);
   const exportController = new ExportController(pdfExportService);
 
@@ -41,10 +43,12 @@ export function initializeAnalyticsRoutes(sequelize: Sequelize) {
   // Rutas de exportación
   app.use("/api/export", createExportRoutes(exportController));
   app.use("/export", createExportRoutes(exportController));
+
+  // Rutas de reportes de ventas
+  app.use("/api/sales", createSalesRoutes(salesController));
 }
 
 // Rutas antiguas (mantener compatibilidad)
-app.use("/api/sales", salesRoutes);
 app.use("/api/bitacora", bitacoraRoutes);
 
 // Middleware de manejo de errores - DEBE IR AL FINAL

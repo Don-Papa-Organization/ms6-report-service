@@ -19,16 +19,30 @@ export class ETLSyncService {
   private serviceToken: string;
 
   constructor(config: SyncConfig, repository: AnalyticsRepository) {
-    this.config = config;
+    this.config = {
+      ...config,
+      orderServiceUrl: this.normalizeServiceBaseUrl(config.orderServiceUrl),
+      inventoryServiceUrl: this.normalizeServiceBaseUrl(config.inventoryServiceUrl),
+      userServiceUrl: this.normalizeServiceBaseUrl(config.userServiceUrl),
+      reservationServiceUrl: this.normalizeServiceBaseUrl(config.reservationServiceUrl),
+      eventServiceUrl: this.normalizeServiceBaseUrl(config.eventServiceUrl)
+    };
     this.repository = repository;
     this.serviceToken = this.createServiceToken();
     this.axiosInstance = axios.create({
       timeout: config.httpTimeout,
       headers: {
+        'x-internal-service-key': config.internalServiceKey,
         'x-service-key': config.internalServiceKey,
         'Authorization': `Bearer ${this.serviceToken}`
       }
     });
+  }
+
+  private normalizeServiceBaseUrl(url: string): string {
+    const cleaned = (url || '').replace(/\/+$/, '');
+    if (!cleaned) return cleaned;
+    return cleaned.endsWith('/api') ? cleaned : `${cleaned}/api`;
   }
 
   private createServiceToken(): string {
@@ -45,12 +59,20 @@ export class ETLSyncService {
   }
 
   private extractDataArray(responseData: any): any[] {
-    if (Array.isArray(responseData?.data)) return responseData.data;
-    if (Array.isArray(responseData?.data?.reservas)) return responseData.data.reservas;
-    if (Array.isArray(responseData?.data?.productos)) return responseData.data.productos;
-    if (Array.isArray(responseData?.data?.orders)) return responseData.data.orders;
+    const payload = responseData?.data ?? responseData;
+    if (Array.isArray(payload)) return payload;
+    if (Array.isArray(payload?.reservas)) return payload.reservas;
+    if (Array.isArray(payload?.productos)) return payload.productos;
+    if (Array.isArray(payload?.orders)) return payload.orders;
     if (Array.isArray(responseData?.orders)) return responseData.orders;
     if (Array.isArray(responseData)) return responseData;
+    return [];
+  }
+
+  private getOrderProducts(order: any): any[] {
+    if (Array.isArray(order?.productos)) return order.productos;
+    if (Array.isArray(order?.productosPedido)) return order.productosPedido;
+    if (Array.isArray(order?.detallePedido)) return order.detallePedido;
     return [];
   }
 
@@ -117,6 +139,12 @@ export class ETLSyncService {
     try {
       console.log(`🔄 [ETL] Sincronizando productos del día ${date.toISOString()}`);
 
+      const exists = await this.repository.checkSummarySyncExists(date, 'product_sales');
+      if (exists) {
+        console.log(`⏭️  [ETL] Productos del ${date.toISOString()} ya sincronizados`);
+        return;
+      }
+
       const response = await this.axiosInstance.get(`${this.config.orderServiceUrl}/orders/all`, {
         params: {
           page: 1,
@@ -133,29 +161,20 @@ export class ETLSyncService {
       const productMap = new Map<number, { cantidadVendida: number; ingresosGenerados: number }>();
 
       for (const order of orders) {
-        if (!order?.idPedido) continue;
+        const products = this.getOrderProducts(order);
+        products.forEach((product: any) => {
+          const idProducto = Number(product.idProducto);
+          if (!idProducto) return;
 
-        try {
-          const detailResponse = await this.axiosInstance.get(`${this.config.orderServiceUrl}/orders/${order.idPedido}`);
-          const detailData = detailResponse.data?.data;
-          const products = Array.isArray(detailData?.productos) ? detailData.productos : [];
+          const cantidad = Number(product.cantidad || 0);
+          const ingreso = Number(product.subtotal || 0);
+          const current = productMap.get(idProducto) || { cantidadVendida: 0, ingresosGenerados: 0 };
 
-          products.forEach((product: any) => {
-            const idProducto = Number(product.idProducto);
-            if (!idProducto) return;
-
-            const cantidad = Number(product.cantidad || 0);
-            const ingreso = Number(product.subtotal || 0);
-            const current = productMap.get(idProducto) || { cantidadVendida: 0, ingresosGenerados: 0 };
-
-            productMap.set(idProducto, {
-              cantidadVendida: current.cantidadVendida + cantidad,
-              ingresosGenerados: current.ingresosGenerados + ingreso
-            });
+          productMap.set(idProducto, {
+            cantidadVendida: current.cantidadVendida + cantidad,
+            ingresosGenerados: current.ingresosGenerados + ingreso
           });
-        } catch {
-          // Si falla un pedido puntual, continuar con el resto
-        }
+        });
       }
 
       for (const [idProducto, metrics] of productMap.entries()) {
@@ -177,6 +196,12 @@ export class ETLSyncService {
   async syncCategoryStock(date: Date): Promise<void> {
     try {
       console.log(`🔄 [ETL] Sincronizando stock del día ${date.toISOString()}`);
+
+      const exists = await this.repository.checkSummarySyncExists(date, 'category_stock');
+      if (exists) {
+        console.log(`⏭️  [ETL] Stock por categoría del ${date.toISOString()} ya sincronizado`);
+        return;
+      }
 
       const response = await this.axiosInstance.get(`${this.config.inventoryServiceUrl}/products`);
       const products = this.extractDataArray(response.data);
@@ -214,6 +239,12 @@ export class ETLSyncService {
     try {
       console.log(`🔄 [ETL] Sincronizando usuarios del día ${date.toISOString()}`);
 
+      const exists = await this.repository.checkSummarySyncExists(date, 'user_growth');
+      if (exists) {
+        console.log(`⏭️  [ETL] Crecimiento de usuarios del ${date.toISOString()} ya sincronizado`);
+        return;
+      }
+
       const usersResponse = await this.axiosInstance.get(`${this.config.userServiceUrl}/usuarios`);
       const users = this.extractDataArray(usersResponse.data);
       const activeClients = users.filter((user: any) => user?.tipoUsuario === 'cliente' && user?.activo !== false).length;
@@ -234,6 +265,12 @@ export class ETLSyncService {
   async syncReservations(date: Date): Promise<void> {
     try {
       console.log(`🔄 [ETL] Sincronizando reservaciones del día ${date.toISOString()}`);
+
+      const exists = await this.repository.checkSummarySyncExists(date, 'reservation_occupancy');
+      if (exists) {
+        console.log(`⏭️  [ETL] Reservaciones del ${date.toISOString()} ya sincronizadas`);
+        return;
+      }
 
       const response = await this.axiosInstance.get(`${this.config.reservationServiceUrl}/reservations/daily`, {
         params: {
@@ -283,6 +320,12 @@ export class ETLSyncService {
   async syncPromotions(date: Date): Promise<void> {
     try {
       console.log(`🔄 [ETL] Sincronizando promociones del día ${date.toISOString()}`);
+
+      const exists = await this.repository.checkSummarySyncExists(date, 'promotion_performance');
+      if (exists) {
+        console.log(`⏭️  [ETL] Promociones del ${date.toISOString()} ya sincronizadas`);
+        return;
+      }
 
       const promotionsResponse = await this.axiosInstance.get(`${this.config.eventServiceUrl}/promotions`);
       const promotions = this.extractDataArray(promotionsResponse.data);

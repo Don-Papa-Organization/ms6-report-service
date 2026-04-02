@@ -3,11 +3,10 @@ import { AnalyticsController } from "../controllers/analyticsController";
 import { authenticateToken, requireRoles } from "../middlewares/authMiddleware";
 import { TipoUsuario } from "../types/express";
 
-const router = Router();
-
 // Nota: Los controladores de analytics se inicializarán en app.ts con la instancia de la BD
 
 export const createAnalyticsRoutes = (controller: AnalyticsController) => {
+  const router = Router();
   /**
    * Rutas de Analytics - Solo accesible para administradores
    */
@@ -19,6 +18,10 @@ export const createAnalyticsRoutes = (controller: AnalyticsController) => {
   // Timeline de ventas diarias
   router.get('/sales/timeline', authenticateToken, requireRoles(TipoUsuario.administrador),
     (req, res) => controller.getSalesTimeline(req, res));
+
+  // Ventas semanales agrupadas
+  router.get('/sales/weekly', authenticateToken, requireRoles(TipoUsuario.administrador),
+    (req, res) => controller.getWeeklySales(req, res));
 
   // Productos más vendidos (Top N)
   router.get('/products/top', authenticateToken, requireRoles(TipoUsuario.administrador),
@@ -52,7 +55,13 @@ export const createAnalyticsRoutes = (controller: AnalyticsController) => {
   router.get('/promotions/effectiveness', authenticateToken, requireRoles(TipoUsuario.administrador),
     (req, res) => controller.getPromotionEffectiveness(req, res));
 
+  // Productos con stock bajo (del ms1)
+  router.get('/inventory/low-stock', authenticateToken, requireRoles(TipoUsuario.administrador),
+    (req, res) => controller.getLowStock(req, res));
+
+  // Stock por categoría (del ms1)
+  router.get('/inventory/stock', authenticateToken, requireRoles(TipoUsuario.administrador),
+    (req, res) => controller.getInventoryStock(req, res));
+
   return router;
 };
-
-export default router;

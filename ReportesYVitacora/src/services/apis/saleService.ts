@@ -1,7 +1,14 @@
 import axios, { AxiosInstance } from "axios";
 
-const ORDER_SERVICE_URL = process.env.ORDER_SERVICE_URL || "http://order-service-app";
+const RAW_ORDER_SERVICE_URL = process.env.ORDER_SERVICE_URL || "http://order-service-app:4003";
 const HTTP_TIMEOUT = parseInt(process.env.HTTP_TIMEOUT || '10000');
+
+const normalizeOrderServiceBaseUrl = (url: string): string => {
+    const cleaned = url.replace(/\/+$/, '');
+    return cleaned.endsWith('/api') ? cleaned : `${cleaned}/api`;
+};
+
+const ORDER_SERVICE_URL = normalizeOrderServiceBaseUrl(RAW_ORDER_SERVICE_URL);
 
 // Interfaces basadas en los DTOs reales del microservicio de pedidos
 interface Pedido {
@@ -51,11 +58,24 @@ export class SaleService {
     }
 
     private extraerLista<T>(data: any): T[] {
-        if (data && data.data) {
-            return Array.isArray(data.data) ? data.data : [];
+        const payload = data?.data ?? data;
+        if (Array.isArray(payload)) {
+            return payload;
         }
-        if (Array.isArray(data)) {
-            return data;
+        if (Array.isArray(payload?.items)) {
+            return payload.items;
+        }
+        if (Array.isArray(payload?.orders)) {
+            return payload.orders;
+        }
+        if (Array.isArray(payload?.pedidos)) {
+            return payload.pedidos;
+        }
+        if (Array.isArray(payload?.payments)) {
+            return payload.payments;
+        }
+        if (Array.isArray(payload?.pagos)) {
+            return payload.pagos;
         }
         return [];
     }
@@ -73,7 +93,7 @@ export class SaleService {
      */
     async obtenerTodosLosPedidos(token: string): Promise<Pedido[]> {
         try {
-            const response = await this.client.get('/api/orders/all', {
+            const response = await this.client.get('/orders/all', {
                 headers: {
                     Authorization: `Bearer ${token}`
                 }
@@ -82,7 +102,7 @@ export class SaleService {
         } catch (error: any) {
             if (this.esErrorIdInvalido(error, 'id de pedido inválido')) {
                 try {
-                    const response = await this.client.get('/api/orders', {
+                    const response = await this.client.get('/orders', {
                         headers: {
                             Authorization: `Bearer ${token}`
                         }
@@ -105,7 +125,7 @@ export class SaleService {
      */
     async obtenerTodosLosPagos(token: string): Promise<Pago[]> {
         try {
-            const response = await this.client.get('/api/payments/all', {
+            const response = await this.client.get('/payments/all', {
                 headers: {
                     Authorization: `Bearer ${token}`
                 }
@@ -114,7 +134,7 @@ export class SaleService {
         } catch (error: any) {
             if (this.esErrorIdInvalido(error, 'id de pago inválido')) {
                 try {
-                    const response = await this.client.get('/api/payments', {
+                    const response = await this.client.get('/payments', {
                         headers: {
                             Authorization: `Bearer ${token}`
                         }
