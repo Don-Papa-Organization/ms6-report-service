@@ -30,13 +30,18 @@ async function startServer() {
         const repository = new AnalyticsRepository(sequelize);
 
         // Seeds opcionales para demo
-        const shouldRunAnalyticsSeeds = process.env.RUN_ANALYTICS_SEEDS === 'true';
+        const shouldRunAnalyticsSeeds =
+            process.env.ENABLE_DEMO_ANALYTICS_SEEDS === 'true' && process.env.NODE_ENV === 'demo';
         const shouldRunBitacoraSeeds = process.env.RUN_BITACORA_SEEDS === 'true';
+
+        if (process.env.RUN_ANALYTICS_SEEDS === 'true' && !shouldRunAnalyticsSeeds) {
+            console.warn('⚠️ RUN_ANALYTICS_SEEDS=true ignorado: analytics demo solo se permite con NODE_ENV=demo y ENABLE_DEMO_ANALYTICS_SEEDS=true');
+        }
 
         if (shouldRunAnalyticsSeeds) {
             const seeds = new AnalyticsSeeds(repository);
             await seeds.run();
-            console.log('🌱 Seeds de analytics ejecutados por configuración RUN_ANALYTICS_SEEDS=true');
+            console.log('🌱 Seeds de analytics ejecutados en modo demo');
         }
 
         if (shouldRunBitacoraSeeds) {
