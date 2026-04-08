@@ -1,8 +1,14 @@
 import { Request, Response } from 'express';
 import { PdfExportService } from '../services/pdfExportService';
+import { extractToken } from '../middlewares/authMiddleware';
 
 export class ExportController {
   constructor(private pdfExportService: PdfExportService) {}
+
+  private resolveAuthHeader(req: Request): string | undefined {
+    const token = extractToken(req);
+    return token ? `Bearer ${token}` : undefined;
+  }
 
   // Exportar datos en JSON
   async exportJSON(req: Request, res: Response): Promise<void> {
@@ -52,7 +58,8 @@ export class ExportController {
       const end = new Date(endDate as string);
       end.setHours(23, 59, 59, 999);
 
-      const pdfBuffer = await this.pdfExportService.generateDashboardPDF(start, end);
+      const authHeader = this.resolveAuthHeader(req);
+      const pdfBuffer = await this.pdfExportService.generateDashboardPDF(start, end, authHeader);
 
       res.setHeader('Content-Type', 'application/pdf');
       res.setHeader('Content-Disposition', `attachment; filename=analytics-${Date.now()}.pdf`);

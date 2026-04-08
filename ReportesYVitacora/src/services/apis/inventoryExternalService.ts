@@ -1,4 +1,5 @@
 import axios, { AxiosInstance } from "axios";
+import jwt from "jsonwebtoken";
 
 const INVENTORY_SERVICE_URL = process.env.INVENTORY_SERVICE_URL || "http://inventory-service-app:4001/api";
 const HTTP_TIMEOUT = parseInt(process.env.HTTP_TIMEOUT || '10000');
@@ -20,8 +21,20 @@ export interface CategoryInfo {
 
 export class InventoryExternalService {
   private client: AxiosInstance;
+  private serviceToken: string;
 
   constructor() {
+    const jwtSecret = process.env.JWT_SECRET || 'tu_super_secreto_jwt_development_very_secure_key_12345';
+    this.serviceToken = jwt.sign(
+      {
+        id: 0,
+        tipoUsuario: 'administrador',
+        activo: true
+      },
+      jwtSecret,
+      { expiresIn: '12h' }
+    );
+
     this.client = axios.create({
       baseURL: INVENTORY_SERVICE_URL,
       timeout: HTTP_TIMEOUT,
@@ -41,6 +54,7 @@ export class InventoryExternalService {
     };
 
     if (!userToken) {
+      headers['Authorization'] = `Bearer ${this.serviceToken}`;
       return headers;
     }
 
@@ -83,6 +97,30 @@ export class InventoryExternalService {
     } catch (error: any) {
       console.error('[InventoryService] Error:', error.message);
       return [];
+    }
+  }
+
+  async getProductById(idProducto: number, userToken?: string): Promise<ProductInfo | null> {
+    if (!Number.isFinite(idProducto) || idProducto <= 0) {
+      return null;
+    }
+
+    try {
+      const headers = this.buildAuthHeaders(userToken);
+      const response = await this.client.get(`/products/${idProducto}`, { headers });
+      const payload = this.extractPayload<any>(response.data);
+
+      if (payload && typeof payload === 'object') {
+        const product = Array.isArray(payload) ? payload[0] : payload;
+        if (product && typeof product === 'object') {
+          return product as ProductInfo;
+        }
+      }
+
+      return null;
+    } catch (error: any) {
+      console.error(`[InventoryService] Error fetching product ${idProducto}:`, error.message);
+      return null;
     }
   }
 

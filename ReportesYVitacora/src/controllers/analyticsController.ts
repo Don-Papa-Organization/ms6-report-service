@@ -1,9 +1,76 @@
 import { Request, Response } from 'express';
 import { AnalyticsRepository } from '../domain/repositories/analyticsRepository';
 import { inventoryExternalService } from '../services/apis/inventoryExternalService';
+import { promotionExternalService } from '../services/apis/promotionExternalService';
+import { extractToken } from '../middlewares/authMiddleware';
 
 export class AnalyticsController {
   constructor(private repository: AnalyticsRepository) {}
+
+  private resolveAuthHeader(req: Request): string | undefined {
+    const token = extractToken(req);
+    return token ? `Bearer ${token}` : undefined;
+  }
+
+  private toNumericId(value: unknown): number {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : 0;
+  }
+
+  private getProductDisplayName(idProducto: number, productNames: Map<number, string>): string {
+    const rawName = productNames.get(idProducto);
+    const normalized = typeof rawName === 'string' ? rawName.trim() : '';
+    if (normalized) {
+      return normalized;
+    }
+    return 'N/A';
+  }
+
+  private async buildProductLookups(authHeader?: string): Promise<{
+    productNames: Map<number, string>;
+    categoryNames: Map<number, string>;
+  }> {
+    const { products, categories } = await inventoryExternalService.getProductsWithCategory(authHeader);
+
+    return {
+      productNames: new Map(products.map((product) => [this.toNumericId(product.idProducto), (product.nombre || '').trim()])),
+      categoryNames: new Map(categories.map((category) => [this.toNumericId(category.idCategoria), (category.nombre || '').trim()]))
+    };
+  }
+
+  private async hydrateMissingProductNames(
+    productIds: number[],
+    productNames: Map<number, string>,
+    authHeader?: string
+  ): Promise<void> {
+    const missingIds = [...new Set(productIds)].filter((idProducto) => idProducto > 0 && !(productNames.get(idProducto) || '').trim());
+
+    if (!missingIds.length) {
+      return;
+    }
+
+    const fetchedProducts = await Promise.all(
+      missingIds.map((idProducto) => inventoryExternalService.getProductById(idProducto, authHeader))
+    );
+
+    fetchedProducts.forEach((product) => {
+      if (!product) {
+        return;
+      }
+
+      const idProducto = this.toNumericId(product.idProducto);
+      const normalizedName = typeof product.nombre === 'string' ? product.nombre.trim() : '';
+
+      if (idProducto > 0 && normalizedName) {
+        productNames.set(idProducto, normalizedName);
+      }
+    });
+  }
+
+  private async buildPromotionLookup(): Promise<Map<number, string>> {
+    const promotions = await promotionExternalService.getPromotions();
+    return new Map(promotions.map((promotion) => [this.toNumericId(promotion.idPromocion), promotion.nombre]));
+  }
 
   // Resumen de ventas por rango de fechas
   async getSalesSummary(req: Request, res: Response): Promise<void> {
@@ -102,11 +169,19 @@ export class AnalyticsController {
       end.setHours(23, 59, 59, 999);
 
       const products = await this.repository.getProductSalesSummary(start, end, parseInt(limit as string) || 10);
+      const authHeader = this.resolveAuthHeader(req);
+      const { productNames } = await this.buildProductLookups(authHeader);
+      await this.hydrateMissingProductNames(
+        products.map((product) => this.toNumericId(product.idProducto)),
+        productNames,
+        authHeader
+      );
 
       res.json({
         success: true,
         data: products.map(p => ({
-          idProducto: p.idProducto,
+          idProducto: this.toNumericId(p.idProducto),
+          nombreProducto: this.getProductDisplayName(this.toNumericId(p.idProducto), productNames),
           cantidadVendida: p.cantidadVendida,
           ingresosGenerados: p.ingresosGenerados,
           fecha: p.fecha
@@ -125,7 +200,7 @@ export class AnalyticsController {
   async getDeadStock(req: Request, res: Response): Promise<void> {
     try {
       const { daysWithoutSale = 30 } = req.query;
-      const authHeader = req.headers.authorization;
+      const authHeader = this.resolveAuthHeader(req);
 
       const cutoffDate = new Date();
       cutoffDate.setDate(cutoffDate.getDate() - parseInt(daysWithoutSale as string || '30'));
@@ -179,13 +254,16 @@ export class AnalyticsController {
       end.setHours(23, 59, 59, 999);
 
       const categories = await this.repository.getCategoryStockSummary(start, end);
+      const authHeader = this.resolveAuthHeader(req);
+      const { categoryNames } = await this.buildProductLookups(authHeader);
       const latestByCategory = new Map<number, { idCategoria: number; stockTotal: number; productosUnicos: number; fecha: Date }>();
 
       for (const row of categories) {
-        const existing = latestByCategory.get(row.idCategoria);
+        const idCategoria = this.toNumericId(row.idCategoria);
+        const existing = latestByCategory.get(idCategoria);
         if (!existing || new Date(row.fecha).getTime() > new Date(existing.fecha).getTime()) {
-          latestByCategory.set(row.idCategoria, {
-            idCategoria: row.idCategoria,
+          latestByCategory.set(idCategoria, {
+            idCategoria,
             stockTotal: row.stockTotal,
             productosUnicos: row.productosUnicos,
             fecha: row.fecha
@@ -198,7 +276,10 @@ export class AnalyticsController {
       res.json({
         success: true,
         data: {
-          categorias: data,
+          categorias: data.map(item => ({
+            ...item,
+            nombreCategoria: categoryNames.get(item.idCategoria) || 'Categoría sin nombre'
+          })),
           resumen: {
             totalCategorias: data.length,
             stockTotal: data.reduce((acc, c) => acc + c.stockTotal, 0),
@@ -373,12 +454,14 @@ export class AnalyticsController {
       end.setHours(23, 59, 59, 999);
 
       const promotions = await this.repository.getPromotionPerformance(start, end);
+      const promotionNames = await this.buildPromotionLookup();
 
       const totalUsosAplicados = promotions.reduce((sum, p) => sum + p.usosAplicados, 0);
       const totalIngresoPromo = promotions.reduce((sum, p) => sum + Number(p.ingresoBajoPromocion), 0);
 
       const detalles = promotions.map(p => ({
-        idPromocion: p.idPromocion,
+        idPromocion: this.toNumericId(p.idPromocion),
+        nombrePromocion: promotionNames.get(this.toNumericId(p.idPromocion)) || 'Promoción sin nombre',
         idEvento: p.idEvento,
         usosAplicados: p.usosAplicados,
         ingresoTotal: Number(p.ingresoBajoPromocion),
@@ -412,7 +495,7 @@ export class AnalyticsController {
   // Productos con stock bajo (del ms1)
   async getLowStock(req: Request, res: Response): Promise<void> {
     try {
-      const authHeader = req.headers.authorization;
+      const authHeader = this.resolveAuthHeader(req);
       
       const products = await inventoryExternalService.getLowStockProducts(authHeader);
 
